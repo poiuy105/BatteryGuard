@@ -193,17 +193,14 @@ public class BluetoothLeService extends android.app.Service {
         }
 
         try {
-            List<ScanFilter> filters = new ArrayList<>();
-            ScanFilter filter = new ScanFilter.Builder()
-                    .setDeviceName(DEVICE_NAME)
-                    .build();
-            filters.add(filter);
-
+            // 不使用 ScanFilter.setDeviceName()，因为大多数 Android 设备的 BLE 控制器
+            // 不在扫描阶段缓存设备名，导致过滤器无法匹配。
+            // 改为无过滤器扫描，在 onScanResult 回调中按名称匹配。
             ScanSettings settings = new ScanSettings.Builder()
                     .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                     .build();
 
-            scanner.startScan(filters, settings, scanCallback);
+            scanner.startScan(null, settings, scanCallback);
             handler.postDelayed(() -> {
                 scanner.stopScan(scanCallback);
                 if (!isConnected) {
