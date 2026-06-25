@@ -1,6 +1,7 @@
 package com.batteryguard;
 
 import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -71,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
-    // 接收来自 BatteryMonitorService 的广播
+    // 接收来自服务和 BLE 的广播
     private final BroadcastReceiver appReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -94,6 +95,15 @@ public class MainActivity extends AppCompatActivity {
                     byte cmd = intent.getByteExtra("cmd", (byte) 0);
                     bleService.sendCommand(cmd);
                 }
+            } else if ("BT_NOT_ENABLED".equals(action)) {
+                Toast.makeText(context, "请开启蓝牙", Toast.LENGTH_SHORT).show();
+                requestEnableBluetooth();
+            } else if ("SCANNER_NULL".equals(action)) {
+                Toast.makeText(context, "蓝牙扫描器未就绪，请确认蓝牙已开启", Toast.LENGTH_SHORT).show();
+            } else if ("SCAN_PERMISSION_DENIED".equals(action)) {
+                Toast.makeText(context, "缺少蓝牙扫描权限，请在设置中开启", Toast.LENGTH_LONG).show();
+            } else if ("ADDR_EMPTY".equals(action) || "ADDR_INVALID".equals(action) || "DEVICE_NULL".equals(action)) {
+                Toast.makeText(context, "设备地址无效，请重新扫描", Toast.LENGTH_SHORT).show();
             }
         }
     };
@@ -194,6 +204,12 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction("BATTERY_LEVEL");
         filter.addAction("ACTION_SEND_PARAMS");
         filter.addAction("ACTION_SEND_COMMAND");
+        filter.addAction("BT_NOT_ENABLED");
+        filter.addAction("SCANNER_NULL");
+        filter.addAction("SCAN_PERMISSION_DENIED");
+        filter.addAction("ADDR_EMPTY");
+        filter.addAction("ADDR_INVALID");
+        filter.addAction("DEVICE_NULL");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(appReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -331,6 +347,14 @@ public class MainActivity extends AppCompatActivity {
                 enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                         : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP);
+    }
+
+    private void requestEnableBluetooth() {
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter != null && !adapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivity(enableBtIntent);
+        }
     }
 
     private void updateConnectionState() {

@@ -163,33 +163,53 @@ public class BluetoothLeService extends android.app.Service {
             broadcastUpdate("BT_NOT_ENABLED");
             return;
         }
-        if (scanner == null) return;
+        if (scanner == null) {
+            broadcastUpdate("SCANNER_NULL");
+            return;
+        }
 
         if (bluetoothGatt != null) {
             bluetoothGatt.close();
             bluetoothGatt = null;
         }
 
-        List<ScanFilter> filters = new ArrayList<>();
-        ScanFilter filter = new ScanFilter.Builder()
-                .setDeviceName(DEVICE_NAME)
-                .build();
-        filters.add(filter);
+        try {
+            List<ScanFilter> filters = new ArrayList<>();
+            ScanFilter filter = new ScanFilter.Builder()
+                    .setDeviceName(DEVICE_NAME)
+                    .build();
+            filters.add(filter);
 
-        ScanSettings settings = new ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-                .build();
+            ScanSettings settings = new ScanSettings.Builder()
+                    .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                    .build();
 
-        scanner.startScan(filters, settings, scanCallback);
-        handler.postDelayed(() -> scanner.stopScan(scanCallback), 10000);
+            scanner.startScan(filters, settings, scanCallback);
+            handler.postDelayed(() -> scanner.stopScan(scanCallback), 10000);
+        } catch (SecurityException e) {
+            Log.e(TAG, "Scan SecurityException: " + e.getMessage());
+            broadcastUpdate("SCAN_PERMISSION_DENIED");
+        }
     }
 
     public boolean connect(String address) {
-        if (bluetoothAdapter == null || address == null || address.isEmpty()) {
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+            broadcastUpdate("BT_NOT_ENABLED");
             return false;
         }
-        BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
+        if (address == null || address.isEmpty()) {
+            broadcastUpdate("ADDR_EMPTY");
+            return false;
+        }
+        BluetoothDevice device;
+        try {
+            device = bluetoothAdapter.getRemoteDevice(address);
+        } catch (IllegalArgumentException e) {
+            broadcastUpdate("ADDR_INVALID");
+            return false;
+        }
         if (device == null) {
+            broadcastUpdate("DEVICE_NULL");
             return false;
         }
         if (bluetoothGatt != null) {
