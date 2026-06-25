@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">智能充电保护器</string>
+    <string name="connect">连接设备</string>
+    <string name="disconnect">断开连接</string>
+    <string name="manual_toggle">手动开关</string>
+    <string name="settings">参数设置</string>
+    <string name="battery_label">电量: --%</string>
+    <string name="relay_label">继电器: --</string>
+    <string name="status_label">状态: 未连接</string>
+    <string name="hint_label">滞回目标: 等待参数</string>
+    <string name="t_on_label">开启阈值</string>
+    <string name="t_off_label">关闭阈值</string>
+    <string name="hys_label">滞回回差</string>
+    <string name="save">保存参数</string>
+    <string name="back">返回</string>
+    <string name="device_name">CH572_BatteryGuard</string>
+</resources>
