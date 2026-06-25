@@ -305,7 +305,12 @@ public class BluetoothLeService extends android.app.Service {
             bluetoothGatt.close();
             bluetoothGatt = null;
         }
-        bluetoothGatt = device.connectGatt(this, false, gattCallback);
+        // 显式指定 TRANSPORT_LE，避免配对后系统误选 Classic 传输
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            bluetoothGatt = device.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
+        } else {
+            bluetoothGatt = device.connectGatt(this, false, gattCallback);
+        }
         deviceAddress = address;
         broadcastUpdate("CONNECTING");
         return true;
@@ -316,6 +321,9 @@ public class BluetoothLeService extends android.app.Service {
         stopAutoReconnect();             // 停止自动重连
         if (bluetoothGatt != null) {
             bluetoothGatt.disconnect();
+            // 立即 close 释放底层资源，避免下次 connect 时 GATT 对象冲突
+            bluetoothGatt.close();
+            bluetoothGatt = null;
         }
         isConnected = false;
     }
