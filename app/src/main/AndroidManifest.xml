@@ -5,7 +5,8 @@
     <!-- 蓝牙权限：Android 12+ 不再需要 BLUETOOTH/BLUETOOTH_ADMIN -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <!-- 位置权限：Android 12+ 不再需要（BLUETOOTH_SCAN 已足够） -->

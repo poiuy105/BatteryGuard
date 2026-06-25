@@ -130,6 +130,10 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(context, "缺少蓝牙扫描权限，请在设置中开启", Toast.LENGTH_LONG).show();
             } else if ("ADDR_EMPTY".equals(action) || "ADDR_INVALID".equals(action) || "DEVICE_NULL".equals(action)) {
                 Toast.makeText(context, "设备地址无效，请重新扫描", Toast.LENGTH_SHORT).show();
+            } else if ("LOCATION_DISABLED".equals(action)) {
+                Toast.makeText(context, "请开启手机定位服务（GPS），部分手机蓝牙扫描需要", Toast.LENGTH_LONG).show();
+                Intent locationIntent = new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+                startActivity(locationIntent);
             } else if ("SCAN_LOG".equals(action)) {
                 String log = intent.getStringExtra("log");
                 if (log != null) {
@@ -250,6 +254,7 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction("ADDR_EMPTY");
         filter.addAction("ADDR_INVALID");
         filter.addAction("DEVICE_NULL");
+        filter.addAction("LOCATION_DISABLED");
         filter.addAction("SCAN_LOG");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(appReceiver, filter, Context.RECEIVER_NOT_EXPORTED);

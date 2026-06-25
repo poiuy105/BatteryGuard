@@ -17,7 +17,9 @@ import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.location.LocationManager;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -194,6 +196,17 @@ public class BluetoothLeService extends android.app.Service {
         if (scanner == null) {
             broadcastUpdate("SCANNER_NULL");
             return;
+        }
+        // Android 6-11: BLE scan requires Location Services to be enabled
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            if (locationManager != null &&
+                !locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) &&
+                !locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                broadcastUpdate("LOCATION_DISABLED");
+                return;
+            }
         }
 
         broadcastUpdate("SCANNING");
