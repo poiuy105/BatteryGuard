@@ -66,12 +66,23 @@ public class BluetoothLeService extends android.app.Service {
         @Override
         public void onScanFailed(int errorCode) {
             Log.e(TAG, "Scan failed: " + errorCode);
+            broadcastUpdate("SCAN_FAILED");
         }
     };
 
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                isConnected = false;
+                broadcastUpdate("CONNECT_FAILED");
+                if (gatt != null) {
+                    gatt.close();
+                    bluetoothGatt = null;
+                }
+                return;
+            }
+
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 isConnected = true;
                 gatt.discoverServices();
@@ -150,7 +161,13 @@ public class BluetoothLeService extends android.app.Service {
         BluetoothManager manager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         if (manager != null) {
             bluetoothAdapter = manager.getAdapter();
-            scanner = bluetoothAdapter.getBluetoothLeScanner();
+            if (bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
+                try {
+                    scanner = bluetoothAdapter.getBluetoothLeScanner();
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to get BluetoothLeScanner", e);
+                }
+            }
         }
     }
 
@@ -167,6 +184,8 @@ public class BluetoothLeService extends android.app.Service {
             broadcastUpdate("SCANNER_NULL");
             return;
         }
+
+        broadcastUpdate("SCANNING");
 
         if (bluetoothGatt != null) {
             bluetoothGatt.close();
@@ -185,7 +204,12 @@ public class BluetoothLeService extends android.app.Service {
                     .build();
 
             scanner.startScan(filters, settings, scanCallback);
-            handler.postDelayed(() -> scanner.stopScan(scanCallback), 10000);
+            handler.postDelayed(() -> {
+                scanner.stopScan(scanCallback);
+                if (!isConnected) {
+                    broadcastUpdate("SCAN_TIMEOUT");
+                }
+            }, 10000);
         } catch (SecurityException e) {
             Log.e(TAG, "Scan SecurityException: " + e.getMessage());
             broadcastUpdate("SCAN_PERMISSION_DENIED");
@@ -218,6 +242,7 @@ public class BluetoothLeService extends android.app.Service {
         }
         bluetoothGatt = device.connectGatt(this, false, gattCallback);
         deviceAddress = address;
+        broadcastUpdate("CONNECTING");
         return true;
     }
 
@@ -269,6 +294,5 @@ public class BluetoothLeService extends android.app.Service {
         void onConnected();
         void onDisconnected();
         void onRelayStateReceived(int state);
-        void onBatteryLevelReceived(int level);
     }
 }

@@ -1,11 +1,15 @@
 # ProGuard rules for BatteryGuard
 
-# Keep BLE classes
+# Keep BLE system classes
 -keep class android.bluetooth.** { *; }
 -keep class android.bluetooth.le.** { *; }
 
-# Keep our application classes
--keep class com.batteryguard.** { *; }
+# Keep application entry points (activities, services, receivers)
+-keep public class com.batteryguard.MainActivity { *; }
+-keep public class com.batteryguard.SettingsActivity { *; }
+-keep public class com.batteryguard.BluetoothLeService { *; }
+-keep public class com.batteryguard.BatteryMonitorService { *; }
+-keep public class com.batteryguard.BootReceiver { *; }
 
 # Keep Serializable/Parcelable
 -keepclassmembers class * implements java.io.Serializable {

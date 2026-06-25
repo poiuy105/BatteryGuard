@@ -65,11 +65,6 @@ public class MainActivity extends AppCompatActivity {
         public void onRelayStateReceived(int state) {
             runOnUiThread(() -> updateRelayUI(state));
         }
-
-        @Override
-        public void onBatteryLevelReceived(int level) {
-            // 电量由前台广播接收器处理
-        }
     };
 
     // 接收来自服务和 BLE 的广播
@@ -95,6 +90,34 @@ public class MainActivity extends AppCompatActivity {
                     byte cmd = intent.getByteExtra("cmd", (byte) 0);
                     bleService.sendCommand(cmd);
                 }
+            } else if ("SCANNING".equals(action)) {
+                runOnUiThread(() -> {
+                    tvStatus.setText("状态: 正在扫描设备...");
+                    btnConnect.setEnabled(false);
+                });
+            } else if ("CONNECTING".equals(action)) {
+                runOnUiThread(() -> {
+                    tvStatus.setText("状态: 正在连接...");
+                    btnConnect.setEnabled(false);
+                });
+            } else if ("SCAN_TIMEOUT".equals(action)) {
+                runOnUiThread(() -> {
+                    tvStatus.setText("状态: 未找到设备");
+                    btnConnect.setEnabled(true);
+                    Toast.makeText(context, "未找到设备，请确认设备在附近并已开启", Toast.LENGTH_LONG).show();
+                });
+            } else if ("SCAN_FAILED".equals(action)) {
+                runOnUiThread(() -> {
+                    tvStatus.setText("状态: 扫描失败");
+                    btnConnect.setEnabled(true);
+                    Toast.makeText(context, "蓝牙扫描失败，请重试", Toast.LENGTH_SHORT).show();
+                });
+            } else if ("CONNECT_FAILED".equals(action)) {
+                runOnUiThread(() -> {
+                    tvStatus.setText("状态: 连接失败");
+                    btnConnect.setEnabled(true);
+                    Toast.makeText(context, "连接失败，请重试", Toast.LENGTH_SHORT).show();
+                });
             } else if ("BT_NOT_ENABLED".equals(action)) {
                 Toast.makeText(context, "请开启蓝牙", Toast.LENGTH_SHORT).show();
                 requestEnableBluetooth();
@@ -204,6 +227,11 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction("BATTERY_LEVEL");
         filter.addAction("ACTION_SEND_PARAMS");
         filter.addAction("ACTION_SEND_COMMAND");
+        filter.addAction("SCANNING");
+        filter.addAction("CONNECTING");
+        filter.addAction("SCAN_TIMEOUT");
+        filter.addAction("SCAN_FAILED");
+        filter.addAction("CONNECT_FAILED");
         filter.addAction("BT_NOT_ENABLED");
         filter.addAction("SCANNER_NULL");
         filter.addAction("SCAN_PERMISSION_DENIED");
@@ -224,6 +252,8 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         // 前台时注册电量广播（不依赖后台服务也能显示电量）
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        // 从 SettingsActivity 返回后刷新参数显示
+        loadParamsAndUpdateHint();
     }
 
     @Override
@@ -363,6 +393,7 @@ public class MainActivity extends AppCompatActivity {
 
         if (connected) {
             btnConnect.setText(R.string.disconnect);
+            btnConnect.setEnabled(true);
             btnToggle.setEnabled(true);
             tvStatus.setText("状态: 已连接");
             bleService.sendCommand((byte) 0x03);
@@ -374,6 +405,7 @@ public class MainActivity extends AppCompatActivity {
             loadParamsAndUpdateHint();
         } else {
             btnConnect.setText(R.string.connect);
+            btnConnect.setEnabled(true);
             btnToggle.setEnabled(false);
             tvStatus.setText("状态: 未连接");
             tvRelay.setText("继电器: --");

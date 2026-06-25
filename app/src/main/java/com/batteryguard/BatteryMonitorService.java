@@ -23,6 +23,7 @@ public class BatteryMonitorService extends Service {
 
     private int lastBatteryLevel = -1;
     private int lastRelayState = 0;
+    private boolean isBatteryReceiverRegistered = false;
 
     private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
         @Override
@@ -58,8 +59,11 @@ public class BatteryMonitorService extends Service {
             return START_NOT_STICKY;
         }
 
-        // 注册电量广播
-        registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        // 防重复注册：START_STICKY 可能导致 onStartCommand 被多次调用
+        if (!isBatteryReceiverRegistered) {
+            registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            isBatteryReceiverRegistered = true;
+        }
 
         // 启动前台服务通知
         startForegroundNotification();
@@ -69,11 +73,15 @@ public class BatteryMonitorService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        try {
-            unregisterReceiver(batteryReceiver);
-        } catch (IllegalArgumentException e) {
-            // Receiver may not have been registered
+        if (isBatteryReceiverRegistered) {
+            try {
+                unregisterReceiver(batteryReceiver);
+            } catch (IllegalArgumentException e) {
+                // ignore
+            }
+            isBatteryReceiverRegistered = false;
         }
+        stopForeground(true);
     }
 
     @Override
