@@ -14,4 +14,14 @@
     <string name="save">保存参数</string>
     <string name="back">返回</string>
     <string name="device_name">CH572_BatteryGuard</string>
+
+    <!-- 功能开关 -->
+    <string name="keep_alive">后台保活（电量监控）</string>
+    <string name="boot_startup">开机自启动</string>
+
+    <!-- 权限说明 -->
+    <string name="permission_rationale_bluetooth">蓝牙低功耗（BLE）需要以下权限才能扫描和连接设备：</string>
+    <string name="permission_rationale_notification">后台保活功能需要通知权限以显示前台服务状态。</string>
+    <string name="permission_denied_bluetooth">缺少蓝牙权限，无法扫描和连接设备。</string>
+    <string name="permission_denied_notification">缺少通知权限，后台保活功能无法启用。</string>
 </resources>

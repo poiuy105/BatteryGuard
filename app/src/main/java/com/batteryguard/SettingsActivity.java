@@ -115,6 +115,7 @@ public class SettingsActivity extends AppCompatActivity {
             intent.putExtra("t_on", tOnVal);
             intent.putExtra("t_off", tOffVal);
             intent.putExtra("hys", hysVal);
+            intent.setPackage(getPackageName());
             sendBroadcast(intent);
 
             Toast.makeText(this, "参数已保存", Toast.LENGTH_SHORT).show();

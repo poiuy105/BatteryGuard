@@ -21,10 +21,7 @@ import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
-import android.os.ParcelUuid;
 import android.util.Log;
-
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -237,13 +234,15 @@ public class BluetoothLeService extends android.app.Service {
 
     private void broadcastUpdate(String action) {
         Intent intent = new Intent(action);
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
     }
 
     private void broadcastRelayState(int state) {
         Intent intent = new Intent("RELAY_STATE");
         intent.putExtra("state", state);
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
     }
 
     public interface BleCallback {

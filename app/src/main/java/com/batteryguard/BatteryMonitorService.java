@@ -3,6 +3,7 @@ package com.batteryguard;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -13,8 +14,6 @@ import android.os.BatteryManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
-
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 public class BatteryMonitorService extends Service {
 
@@ -48,35 +47,62 @@ public class BatteryMonitorService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
-        IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
-        registerReceiver(batteryReceiver, filter);
-
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         lastRelayState = prefs.getInt("relay_state", 0);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("电池监控中")
-                    .setContentText("智能充电保护器运行中")
-                    .setSmallIcon(android.R.drawable.ic_dialog_info)
-                    .build();
-            startForeground(1, notification);
+        if (intent != null && "STOP_SERVICE".equals(intent.getAction())) {
+            stopSelf();
+            return START_NOT_STICKY;
         }
+
+        // 注册电量广播
+        registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+
+        // 启动前台服务通知
+        startForegroundNotification();
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        unregisterReceiver(batteryReceiver);
+        try {
+            unregisterReceiver(batteryReceiver);
+        } catch (IllegalArgumentException e) {
+            // Receiver may not have been registered
+        }
     }
 
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    private void startForegroundNotification() {
+        Intent stopIntent = new Intent(this, BatteryMonitorService.class);
+        stopIntent.setAction("STOP_SERVICE");
+        PendingIntent stopPendingIntent = PendingIntent.getService(this, 0, stopIntent,
+                PendingIntent.FLAG_IMMUTABLE);
+
+        Notification.Builder builder;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder = new Notification.Builder(this, CHANNEL_ID);
+        } else {
+            builder = new Notification.Builder(this);
+        }
+
+        Notification notification = builder
+                .setContentTitle("智能充电保护器")
+                .setContentText("后台电量监控运行中")
+                .setSmallIcon(android.R.drawable.ic_lock_idle_low_battery)
+                .setOngoing(true)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopPendingIntent)
+                .build();
+
+        startForeground(1, notification);
     }
 
     private void createNotificationChannel() {
@@ -87,6 +113,8 @@ public class BatteryMonitorService extends Service {
                     NotificationManager.IMPORTANCE_LOW
             );
             channel.setDescription("智能充电保护器后台电池监控服务");
+            channel.setSound(null, null);
+            channel.enableVibration(false);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(channel);
@@ -109,7 +137,8 @@ public class BatteryMonitorService extends Service {
         if (needOn || needOff) {
             Intent cmdIntent = new Intent("ACTION_SEND_COMMAND");
             cmdIntent.putExtra("cmd", needOn ? (byte) 0x01 : (byte) 0x02);
-            LocalBroadcastManager.getInstance(this).sendBroadcast(cmdIntent);
+            cmdIntent.setPackage(getPackageName());
+            sendBroadcast(cmdIntent);
 
             lastRelayState = needOn ? 1 : 0;
             SharedPreferences.Editor editor = prefs.edit();
@@ -123,6 +152,7 @@ public class BatteryMonitorService extends Service {
     private void broadcastBattery(int level) {
         Intent intent = new Intent("BATTERY_LEVEL");
         intent.putExtra("level", level);
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
     }
 }

@@ -9,6 +9,7 @@ import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -17,18 +18,21 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final int REQUEST_PERMISSIONS = 1;
+    private static final int REQ_BLE_PERMISSIONS = 1;
+    private static final int REQ_NOTIFICATION_PERMISSION = 2;
     private static final String PREFS_NAME = "BatteryGuardPrefs";
 
     private TextView tvBattery, tvRelay, tvStatus, tvHint;
     private Button btnConnect, btnToggle, btnSettings;
+    private SwitchCompat swKeepAlive, swBootStartup;
 
     private BluetoothLeService bleService;
     private boolean isBound = false;
@@ -63,11 +67,12 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onBatteryLevelReceived(int level) {
-            // 电量由 BatteryMonitorService 处理
+            // 电量由前台广播接收器处理
         }
     };
 
-    private final BroadcastReceiver localReceiver = new BroadcastReceiver() {
+    // 接收来自 BatteryMonitorService 的广播
+    private final BroadcastReceiver appReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
@@ -93,6 +98,21 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
+    // 前台电量监听（App 在前台时不依赖 BatteryMonitorService）
+    private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (Intent.ACTION_BATTERY_CHANGED.equals(intent.getAction())) {
+                int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+                if (level >= 0) {
+                    int percent = (level * 100) / scale;
+                    tvBattery.setText("电量: " + percent + "%");
+                }
+            }
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -105,20 +125,45 @@ public class MainActivity extends AppCompatActivity {
         btnConnect = findViewById(R.id.btn_connect);
         btnToggle = findViewById(R.id.btn_toggle);
         btnSettings = findViewById(R.id.btn_settings);
+        swKeepAlive = findViewById(R.id.sw_keep_alive);
+        swBootStartup = findViewById(R.id.sw_boot_startup);
 
-        checkPermissions();
+        // 绑定 BLE 服务
+        Intent bleIntent = new Intent(this, BluetoothLeService.class);
+        bindService(bleIntent, serviceConnection, Context.BIND_AUTO_CREATE);
 
+        // 加载开关状态
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        swKeepAlive.setChecked(prefs.getBoolean("keep_alive", false));
+        swBootStartup.setChecked(prefs.getBoolean("boot_startup", false));
+
+        // 后台保活开关
+        swKeepAlive.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean("keep_alive", isChecked).apply();
+            if (isChecked) {
+                startBatteryMonitorService();
+            } else {
+                stopService(new Intent(this, BatteryMonitorService.class));
+            }
+        });
+
+        // 开机自启动开关
+        swBootStartup.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean("boot_startup", isChecked).apply();
+            setBootReceiverEnabled(isChecked);
+        });
+
+        // 按钮监听
         btnConnect.setOnClickListener(v -> {
             if (bleService != null && bleService.isConnected()) {
                 bleService.disconnect();
             } else {
                 if (bleService != null) {
-                    SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
                     String address = prefs.getString("ble_address", "");
                     if (!address.isEmpty()) {
                         bleService.connect(address);
                     } else {
-                        Toast.makeText(this, "请先扫描并连接一次设备", Toast.LENGTH_SHORT).show();
+                        bleService.scanAndConnect();
                     }
                 } else {
                     Toast.makeText(this, "BLE服务未就绪", Toast.LENGTH_SHORT).show();
@@ -138,59 +183,58 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnSettings.setOnClickListener(v -> {
-            Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
-            startActivity(intent);
+            startActivity(new Intent(MainActivity.this, SettingsActivity.class));
         });
 
-        Intent bleIntent = new Intent(this, BluetoothLeService.class);
-        bindService(bleIntent, serviceConnection, Context.BIND_AUTO_CREATE);
+        // 请求 BLE 权限
+        requestBlePermissionsIfNeeded();
 
-        Intent batteryIntent = new Intent(this, BatteryMonitorService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(batteryIntent);
-        } else {
-            startService(batteryIntent);
-        }
-
-        loadParamsAndUpdateHint();
-
+        // 注册应用内广播接收器
         IntentFilter filter = new IntentFilter();
         filter.addAction("BATTERY_LEVEL");
         filter.addAction("ACTION_SEND_PARAMS");
         filter.addAction("ACTION_SEND_COMMAND");
-        LocalBroadcastManager.getInstance(this).registerReceiver(localReceiver, filter);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(appReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(appReceiver, filter);
+        }
+
+        loadParamsAndUpdateHint();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 前台时注册电量广播（不依赖后台服务也能显示电量）
+        registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        unregisterReceiver(batteryReceiver);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(localReceiver);
+        unregisterReceiver(appReceiver);
         if (isBound) {
             unbindService(serviceConnection);
             isBound = false;
         }
     }
 
-    private void checkPermissions() {
-        String[] permissions;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permissions = new String[]{
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.FOREGROUND_SERVICE
-            };
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            permissions = new String[]{
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                    Manifest.permission.FOREGROUND_SERVICE
-            };
-        } else {
-            permissions = new String[]{
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-            };
+    private void requestBlePermissionsIfNeeded() {
+        String[] permissions = getBlePermissions();
+        boolean needsRationale = false;
+        for (String perm : permissions) {
+            if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
+                if (ActivityCompat.shouldShowRequestPermissionRationale(this, perm)) {
+                    needsRationale = true;
+                }
+            }
         }
 
         boolean allGranted = true;
@@ -201,22 +245,92 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        if (!allGranted) {
-            ActivityCompat.requestPermissions(this, permissions, REQUEST_PERMISSIONS);
+        if (allGranted) return;
+
+        if (needsRationale) {
+            new AlertDialog.Builder(this)
+                    .setTitle("需要权限")
+                    .setMessage(R.string.permission_rationale_bluetooth)
+                    .setPositiveButton("确定", (d, w) -> ActivityCompat.requestPermissions(this, permissions, REQ_BLE_PERMISSIONS))
+                    .setNegativeButton("取消", null)
+                    .show();
+        } else {
+            ActivityCompat.requestPermissions(this, permissions, REQ_BLE_PERMISSIONS);
+        }
+    }
+
+    private String[] getBlePermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return new String[]{
+                    Manifest.permission.BLUETOOTH_SCAN,
+                    Manifest.permission.BLUETOOTH_CONNECT
+            };
+        } else {
+            return new String[]{
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+            };
+        }
+    }
+
+    private void startBatteryMonitorService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.POST_NOTIFICATIONS)) {
+                    new AlertDialog.Builder(this)
+                            .setTitle("需要通知权限")
+                            .setMessage(R.string.permission_rationale_notification)
+                            .setPositiveButton("确定", (d, w) -> ActivityCompat.requestPermissions(this,
+                                    new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATION_PERMISSION))
+                            .setNegativeButton("取消", (d, w) -> swKeepAlive.setChecked(false))
+                            .show();
+                } else {
+                    ActivityCompat.requestPermissions(this,
+                            new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATION_PERMISSION);
+                }
+                return;
+            }
+        }
+        Intent intent = new Intent(this, BatteryMonitorService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
         }
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_PERMISSIONS) {
+        if (requestCode == REQ_BLE_PERMISSIONS) {
+            boolean allGranted = true;
             for (int result : grantResults) {
                 if (result != PackageManager.PERMISSION_GRANTED) {
-                    Toast.makeText(this, "部分权限被拒绝，App功能可能受限", Toast.LENGTH_LONG).show();
+                    allGranted = false;
                     break;
                 }
             }
+            if (!allGranted) {
+                Toast.makeText(this, R.string.permission_denied_bluetooth, Toast.LENGTH_LONG).show();
+            }
+        } else if (requestCode == REQ_NOTIFICATION_PERMISSION) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted) {
+                startBatteryMonitorService();
+            } else {
+                swKeepAlive.setChecked(false);
+                Toast.makeText(this, R.string.permission_denied_notification, Toast.LENGTH_LONG).show();
+            }
         }
+    }
+
+    private void setBootReceiverEnabled(boolean enabled) {
+        ComponentName component = new ComponentName(this, BootReceiver.class);
+        getPackageManager().setComponentEnabledSetting(component,
+                enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP);
     }
 
     private void updateConnectionState() {
