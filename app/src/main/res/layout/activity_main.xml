@@ -118,4 +118,32 @@
 
     </LinearLayout>
 
+    <!-- 扫描日志 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/scan_log"
+        android:textSize="13sp"
+        android:textColor="#888888" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="4dp"
+        android:background="#F5F5F5"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/tv_scan_log"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:fontFamily="monospace" />
+
+    </ScrollView>
+
 </LinearLayout>

@@ -31,9 +31,10 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_NOTIFICATION_PERMISSION = 2;
     private static final String PREFS_NAME = "BatteryGuardPrefs";
 
-    private TextView tvBattery, tvRelay, tvStatus, tvHint;
+    private TextView tvBattery, tvRelay, tvStatus, tvHint, tvScanLog;
     private Button btnConnect, btnToggle, btnSettings;
     private SwitchCompat swKeepAlive, swBootStartup;
+    private final StringBuilder scanLogBuilder = new StringBuilder();
 
     private BluetoothLeService bleService;
     private boolean isBound = false;
@@ -94,6 +95,8 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     tvStatus.setText("状态: 正在扫描设备...");
                     btnConnect.setEnabled(false);
+                    scanLogBuilder.setLength(0);
+                    tvScanLog.setText("");
                 });
             } else if ("CONNECTING".equals(action)) {
                 runOnUiThread(() -> {
@@ -127,6 +130,14 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(context, "缺少蓝牙扫描权限，请在设置中开启", Toast.LENGTH_LONG).show();
             } else if ("ADDR_EMPTY".equals(action) || "ADDR_INVALID".equals(action) || "DEVICE_NULL".equals(action)) {
                 Toast.makeText(context, "设备地址无效，请重新扫描", Toast.LENGTH_SHORT).show();
+            } else if ("SCAN_LOG".equals(action)) {
+                String log = intent.getStringExtra("log");
+                if (log != null) {
+                    runOnUiThread(() -> {
+                        scanLogBuilder.append(log).append("\n");
+                        tvScanLog.setText(scanLogBuilder.toString());
+                    });
+                }
             }
         }
     };
@@ -155,6 +166,7 @@ public class MainActivity extends AppCompatActivity {
         tvRelay = findViewById(R.id.tv_relay);
         tvStatus = findViewById(R.id.tv_status);
         tvHint = findViewById(R.id.tv_hint);
+        tvScanLog = findViewById(R.id.tv_scan_log);
         btnConnect = findViewById(R.id.btn_connect);
         btnToggle = findViewById(R.id.btn_toggle);
         btnSettings = findViewById(R.id.btn_settings);
@@ -238,6 +250,7 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction("ADDR_EMPTY");
         filter.addAction("ADDR_INVALID");
         filter.addAction("DEVICE_NULL");
+        filter.addAction("SCAN_LOG");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(appReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {

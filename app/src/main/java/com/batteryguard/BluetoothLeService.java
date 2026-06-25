@@ -62,7 +62,9 @@ public class BluetoothLeService extends android.app.Service {
             if (name == null) {
                 name = device.getName();
             }
-            Log.d(TAG, "Scanned device: " + device.getAddress() + " name=" + name);
+            String logEntry = device.getAddress() + " " + (name != null ? name : "[null]");
+            Log.d(TAG, "Scanned: " + logEntry);
+            broadcastScanLog(logEntry);
             if (name != null && name.contains(DEVICE_NAME)) {
                 scanner.stopScan(this);
                 deviceAddress = device.getAddress();
@@ -292,6 +294,13 @@ public class BluetoothLeService extends android.app.Service {
     private void broadcastRelayState(int state) {
         Intent intent = new Intent("RELAY_STATE");
         intent.putExtra("state", state);
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
+    }
+
+    private void broadcastScanLog(String logEntry) {
+        Intent intent = new Intent("SCAN_LOG");
+        intent.putExtra("log", logEntry);
         intent.setPackage(getPackageName());
         sendBroadcast(intent);
     }
