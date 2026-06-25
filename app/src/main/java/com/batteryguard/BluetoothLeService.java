@@ -53,7 +53,16 @@ public class BluetoothLeService extends android.app.Service {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
             BluetoothDevice device = result.getDevice();
-            String name = device.getName();
+            // 优先从 ScanRecord 解析设备名（直接从广播数据读取，不依赖系统缓存）
+            String name = null;
+            if (result.getScanRecord() != null) {
+                name = result.getScanRecord().getDeviceName();
+            }
+            // Fallback: 如果 ScanRecord 没有设备名，尝试 device.getName()（系统缓存）
+            if (name == null) {
+                name = device.getName();
+            }
+            Log.d(TAG, "Scanned device: " + device.getAddress() + " name=" + name);
             if (name != null && name.contains(DEVICE_NAME)) {
                 scanner.stopScan(this);
                 deviceAddress = device.getAddress();
