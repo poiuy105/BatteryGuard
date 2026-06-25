@@ -11,7 +11,6 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
 import android.content.Context;
@@ -25,8 +24,6 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 public class BluetoothLeService extends android.app.Service {
@@ -35,6 +32,7 @@ public class BluetoothLeService extends android.app.Service {
     private static final String PREFS_NAME = "BatteryGuardPrefs";
 
     public static final String DEVICE_NAME = "CH572_BatteryGuard";
+    private static final long AUTO_RECONNECT_DELAY_MS = 3000; // 3秒间隔
 
     private static final UUID SERVICE_UUID = UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb");
     private static final UUID CHAR1_UUID   = UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb");
@@ -47,6 +45,28 @@ public class BluetoothLeService extends android.app.Service {
     private boolean isConnected = false;
     private String deviceAddress = "";
 
+    // 自动重连状态
+    private boolean userInitiatedDisconnect = false; // true = 用户主动点击断开
+    private boolean autoReconnectActive = false;     // true = 正在自动重连中
+    private final Runnable autoReconnectRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!autoReconnectActive) return;
+            if (isConnected) return;
+            if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) return;
+
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            String savedAddr = prefs.getString("ble_address", "");
+            if (!savedAddr.isEmpty()) {
+                Log.d(TAG, "Auto reconnecting to " + savedAddr);
+                broadcastUpdate("AUTO_RECONNECTING");
+                connect(savedAddr);
+            }
+            // 无论本次 connect 是否成功，3 秒后再次检查
+            handler.postDelayed(this, AUTO_RECONNECT_DELAY_MS);
+        }
+    };
+
     private BleCallback callback = null;
     private BluetoothLeScanner scanner;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -55,12 +75,10 @@ public class BluetoothLeService extends android.app.Service {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
             BluetoothDevice device = result.getDevice();
-            // 优先从 ScanRecord 解析设备名（直接从广播数据读取，不依赖系统缓存）
             String name = null;
             if (result.getScanRecord() != null) {
                 name = result.getScanRecord().getDeviceName();
             }
-            // Fallback: 如果 ScanRecord 没有设备名，尝试 device.getName()（系统缓存）
             if (name == null) {
                 name = device.getName();
             }
@@ -93,11 +111,17 @@ public class BluetoothLeService extends android.app.Service {
                     gatt.close();
                     bluetoothGatt = null;
                 }
+                // 连接失败且非用户主动断开 → 启动自动重连
+                if (!userInitiatedDisconnect) {
+                    startAutoReconnect();
+                }
                 return;
             }
 
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 isConnected = true;
+                userInitiatedDisconnect = false; // 连接成功后清除标志
+                stopAutoReconnect();             // 连接成功停止重连
                 gatt.discoverServices();
                 if (callback != null) callback.onConnected();
                 broadcastUpdate("CONNECTED");
@@ -108,6 +132,10 @@ public class BluetoothLeService extends android.app.Service {
                 if (gatt != null) {
                     gatt.close();
                     bluetoothGatt = null;
+                }
+                // 意外断开（非用户主动）→ 启动自动重连
+                if (!userInitiatedDisconnect) {
+                    startAutoReconnect();
                 }
             }
         }
@@ -161,6 +189,7 @@ public class BluetoothLeService extends android.app.Service {
 
     @Override
     public boolean onUnbind(Intent intent) {
+        stopAutoReconnect();
         if (bluetoothGatt != null) {
             bluetoothGatt.close();
             bluetoothGatt = null;
@@ -188,6 +217,25 @@ public class BluetoothLeService extends android.app.Service {
         this.callback = callback;
     }
 
+    // ---------- 自动重连 ----------
+
+    private void startAutoReconnect() {
+        if (autoReconnectActive) return; // 已经在重连中
+        autoReconnectActive = true;
+        Log.d(TAG, "Starting auto reconnect");
+        // 立即执行第一次（不等待3秒）
+        handler.post(autoReconnectRunnable);
+    }
+
+    public void stopAutoReconnect() {
+        if (!autoReconnectActive) return;
+        autoReconnectActive = false;
+        handler.removeCallbacks(autoReconnectRunnable);
+        Log.d(TAG, "Auto reconnect stopped");
+    }
+
+    // ---------- 扫描与连接 ----------
+
     public void scanAndConnect() {
         if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
             broadcastUpdate("BT_NOT_ENABLED");
@@ -197,7 +245,6 @@ public class BluetoothLeService extends android.app.Service {
             broadcastUpdate("SCANNER_NULL");
             return;
         }
-        // Android 6-11: BLE scan requires Location Services to be enabled
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
             Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
@@ -217,9 +264,6 @@ public class BluetoothLeService extends android.app.Service {
         }
 
         try {
-            // 不使用 ScanFilter.setDeviceName()，因为大多数 Android 设备的 BLE 控制器
-            // 不在扫描阶段缓存设备名，导致过滤器无法匹配。
-            // 改为无过滤器扫描，在 onScanResult 回调中按名称匹配。
             ScanSettings settings = new ScanSettings.Builder()
                     .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                     .build();
@@ -268,6 +312,8 @@ public class BluetoothLeService extends android.app.Service {
     }
 
     public void disconnect() {
+        userInitiatedDisconnect = true;  // 标记为用户主动断开
+        stopAutoReconnect();             // 停止自动重连
         if (bluetoothGatt != null) {
             bluetoothGatt.disconnect();
         }
@@ -297,6 +343,8 @@ public class BluetoothLeService extends android.app.Service {
         char1.setValue(new byte[]{(byte) 0x04, (byte) tOn, (byte) tOff, (byte) hys});
         bluetoothGatt.writeCharacteristic(char1);
     }
+
+    // ---------- 广播 ----------
 
     private void broadcastUpdate(String action) {
         Intent intent = new Intent(action);

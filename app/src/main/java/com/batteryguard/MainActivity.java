@@ -117,9 +117,13 @@ public class MainActivity extends AppCompatActivity {
                 });
             } else if ("CONNECT_FAILED".equals(action)) {
                 runOnUiThread(() -> {
-                    tvStatus.setText("状态: 连接失败");
+                    tvStatus.setText("状态: 连接失败，正在自动重连...");
                     btnConnect.setEnabled(true);
-                    Toast.makeText(context, "连接失败，请重试", Toast.LENGTH_SHORT).show();
+                });
+            } else if ("AUTO_RECONNECTING".equals(action)) {
+                runOnUiThread(() -> {
+                    tvStatus.setText("状态: 自动重连中...");
+                    btnConnect.setEnabled(false);
                 });
             } else if ("BT_NOT_ENABLED".equals(action)) {
                 Toast.makeText(context, "请开启蓝牙", Toast.LENGTH_SHORT).show();
@@ -248,6 +252,7 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction("SCAN_TIMEOUT");
         filter.addAction("SCAN_FAILED");
         filter.addAction("CONNECT_FAILED");
+        filter.addAction("AUTO_RECONNECTING");
         filter.addAction("BT_NOT_ENABLED");
         filter.addAction("SCANNER_NULL");
         filter.addAction("SCAN_PERMISSION_DENIED");
