@@ -5,7 +5,8 @@
     <string name="manual_toggle">手动开关</string>
     <string name="settings">参数设置</string>
     <string name="battery_label">电量: --%</string>
-    <string name="relay_label">继电器: --</string>
+    <string name="relay_label">设备继电器: --</string>
+    <string name="local_charging_label">本机充电: 未知</string>
     <string name="status_label">状态: 未连接</string>
     <string name="hint_label">滞回目标: 等待参数</string>
     <string name="t_on_label">开启阈值</string>

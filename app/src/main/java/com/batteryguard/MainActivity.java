@@ -31,7 +31,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_NOTIFICATION_PERMISSION = 2;
     private static final String PREFS_NAME = "BatteryGuardPrefs";
 
-    private TextView tvBattery, tvRelay, tvStatus, tvHint, tvScanLog;
+    private TextView tvBattery, tvRelay, tvLocalCharging, tvStatus, tvHint, tvScanLog;
     private Button btnConnect, btnToggle, btnSettings;
     private SwitchCompat swKeepAlive, swBootStartup;
     private final StringBuilder scanLogBuilder = new StringBuilder();
@@ -165,10 +165,14 @@ public class MainActivity extends AppCompatActivity {
             if (Intent.ACTION_BATTERY_CHANGED.equals(intent.getAction())) {
                 int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
                 int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+                int plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0);
                 if (level >= 0) {
                     int percent = (level * 100) / scale;
                     tvBattery.setText("电量: " + percent + "%");
                 }
+                // 本机实际充电状态：独立于设备继电器，始终实时（不依赖蓝牙）
+                boolean charging = plugged != 0;  // 1=AC, 2=USB, 4=无线
+                tvLocalCharging.setText(charging ? "本机充电: 充电中" : "本机充电: 未充电");
             }
         }
     };
@@ -180,6 +184,7 @@ public class MainActivity extends AppCompatActivity {
 
         tvBattery = findViewById(R.id.tv_battery);
         tvRelay = findViewById(R.id.tv_relay);
+        tvLocalCharging = findViewById(R.id.tv_local_charging);
         tvStatus = findViewById(R.id.tv_status);
         tvHint = findViewById(R.id.tv_hint);
         tvScanLog = findViewById(R.id.tv_scan_log);
@@ -427,6 +432,9 @@ public class MainActivity extends AppCompatActivity {
             btnConnect.setEnabled(true);
             btnToggle.setEnabled(true);
             tvStatus.setText("状态: 已连接");
+            // 继电器区恢复正常显示，等待设备上报（查询命令 0x03 会触发 notify）
+            tvRelay.setTextColor(0xFF333333);
+            tvRelay.setText("设备继电器: …");
             bleService.sendCommand((byte) 0x03);
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
             int tOn = prefs.getInt("t_on", 30);
@@ -439,17 +447,17 @@ public class MainActivity extends AppCompatActivity {
             btnConnect.setEnabled(true);
             btnToggle.setEnabled(false);
             tvStatus.setText("状态: 未连接");
-            tvRelay.setText("继电器: --");
+            // 断连：设备继电器数据不再可靠，标"离线"并灰显
+            tvRelay.setText("设备继电器: 离线");
+            tvRelay.setTextColor(0xFF999999);
         }
     }
 
     private void updateRelayUI(int state) {
-        if (state == 1) {
-            tvRelay.setText("继电器: 开 (充电中)");
-        } else {
-            tvRelay.setText("继电器: 关 (待机)");
-        }
-        tvStatus.setText(state == 1 ? "状态: 充电中" : "状态: 待机");
+        // 仅显示设备继电器物理状态，不再据此推断"充电中/待机"
+        // （本机是否真在充电由系统广播独立显示，避免设备未接入回路时的误导）
+        tvRelay.setTextColor(0xFF333333);
+        tvRelay.setText(state == 1 ? "设备继电器: 开" : "设备继电器: 关");
     }
 
     private void loadParamsAndUpdateHint() {
