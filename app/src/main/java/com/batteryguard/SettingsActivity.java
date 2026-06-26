@@ -16,7 +16,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private SeekBar sbTOn, sbTOff, sbHys;
     private TextView tvTOnValue, tvTOffValue, tvHysValue;
-    private Button btnSave, btnBack;
+    private Button btnSave, btnUnbind, btnBack;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,6 +30,7 @@ public class SettingsActivity extends AppCompatActivity {
         tvTOffValue = findViewById(R.id.tv_t_off_value);
         tvHysValue = findViewById(R.id.tv_hys_value);
         btnSave = findViewById(R.id.btn_save);
+        btnUnbind = findViewById(R.id.btn_unbind);
         btnBack = findViewById(R.id.btn_back);
 
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
@@ -119,6 +120,13 @@ public class SettingsActivity extends AppCompatActivity {
             sendBroadcast(intent);
 
             Toast.makeText(this, "参数已保存", Toast.LENGTH_SHORT).show();
+            finish();
+        });
+
+        btnUnbind.setOnClickListener(v -> {
+            // 通过广播请求 MainActivity 调用 BLE 服务解绑当前设备
+            sendBroadcast(new Intent("ACTION_UNBIND").setPackage(getPackageName()));
+            Toast.makeText(this, "已请求解绑", Toast.LENGTH_SHORT).show();
             finish();
         });
 

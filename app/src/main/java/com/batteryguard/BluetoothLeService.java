@@ -24,6 +24,8 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class BluetoothLeService extends android.app.Service {
@@ -34,10 +36,26 @@ public class BluetoothLeService extends android.app.Service {
     public static final String DEVICE_NAME = "CH572_BatteryGuard";
     private static final long AUTO_RECONNECT_DELAY_MS = 3000; // 3秒间隔
 
+    // 已绑定设备的 MAC（绑定凭证，与用于自动重连的 ble_address 区分）
+    private static final String KEY_BOUND_DEVICE = "bound_device";
+
     private static final UUID SERVICE_UUID = UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb");
     private static final UUID CHAR1_UUID   = UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb");
     private static final UUID CHAR4_UUID   = UUID.fromString("0000ffe4-0000-1000-8000-00805f9b34fb");
     private static final UUID CCCD_UUID    = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+
+    // 绑定握手命令（写 CHAR1）
+    private static final byte CMD_BIND   = 0x10;  // 首次绑定：[0x10] + appId[16]
+    private static final byte CMD_AUTH   = 0x11;  // 日常认证：[0x11] + appId[16]
+    private static final byte CMD_UNBIND = 0x12;  // 请求解绑
+
+    // CHAR4 通知值（设备→app，单字节）
+    private static final int NOTIFY_RELAY_OFF  = 0x00;
+    private static final int NOTIFY_RELAY_ON   = 0x01;
+    private static final int NOTIFY_BIND_OK    = 0xA0;
+    private static final int NOTIFY_BIND_FAIL  = 0xA1;
+    private static final int NOTIFY_AUTH_OK    = 0xA2;
+    private static final int NOTIFY_AUTH_FAIL  = 0xA3;
 
     private final IBinder binder = new LocalBinder();
     private BluetoothAdapter bluetoothAdapter;
@@ -71,6 +89,9 @@ public class BluetoothLeService extends android.app.Service {
     private BluetoothLeScanner scanner;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
+    // 扫描候选设备（物理就近：扫描窗口结束后按 RSSI 选最强）
+    private final List<ScanResult> scanCandidates = new ArrayList<>();
+
     private final ScanCallback scanCallback = new ScanCallback() {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
@@ -82,13 +103,19 @@ public class BluetoothLeService extends android.app.Service {
             if (name == null) {
                 name = device.getName();
             }
-            Log.d(TAG, "Scanned: " + device.getAddress() + " " + (name != null ? name : "[null]"));
+            Log.d(TAG, "Scanned: " + device.getAddress() + " rssi=" + result.getRssi()
+                    + " " + (name != null ? name : "[null]"));
             if (name != null && name.contains(DEVICE_NAME)) {
-                scanner.stopScan(this);
-                deviceAddress = device.getAddress();
-                SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-                prefs.edit().putString("ble_address", deviceAddress).apply();
-                connect(deviceAddress);
+                // 累积候选，同地址去重保留最新（信号）结果，扫描结束后统一选最强
+                synchronized (scanCandidates) {
+                    String addr = device.getAddress();
+                    for (int i = scanCandidates.size() - 1; i >= 0; i--) {
+                        if (scanCandidates.get(i).getDevice().getAddress().equals(addr)) {
+                            scanCandidates.remove(i);
+                        }
+                    }
+                    scanCandidates.add(result);
+                }
             }
         }
 
@@ -163,10 +190,16 @@ public class BluetoothLeService extends android.app.Service {
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             if (CHAR4_UUID.equals(characteristic.getUuid())) {
                 byte[] data = characteristic.getValue();
-                if (data != null && data.length > 0) {
-                    int relayState = data[0] & 0xFF;
+                if (data == null || data.length == 0) return;
+                int value = data[0] & 0xFF;
+                if (value == NOTIFY_RELAY_ON || value == NOTIFY_RELAY_OFF) {
+                    // 继电器状态
+                    int relayState = value;
                     if (callback != null) callback.onRelayStateReceived(relayState);
                     broadcastRelayState(relayState);
+                } else {
+                    // 绑定握手结果
+                    handleBindingNotify(value);
                 }
             }
         }
@@ -178,13 +211,12 @@ public class BluetoothLeService extends android.app.Service {
 
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
-            // Char4 的 CCCD（notify 订阅）写入成功后，才通知 UI 层发起状态查询
-            // —— 确保设备回的 notify 能被收到，修复“连接后继电器状态不同步”
+            // Char4 的 CCCD（notify 订阅）写入成功后，发起身份握手（绑定或认证）
             if (status == BluetoothGatt.GATT_SUCCESS
                     && CCCD_UUID.equals(descriptor.getUuid())
                     && descriptor.getCharacteristic() != null
                     && CHAR4_UUID.equals(descriptor.getCharacteristic().getUuid())) {
-                if (callback != null) callback.onSubscribed();
+                startHandshake();
             }
         }
     };
@@ -276,6 +308,10 @@ public class BluetoothLeService extends android.app.Service {
             bluetoothGatt = null;
         }
 
+        synchronized (scanCandidates) {
+            scanCandidates.clear();
+        }
+
         try {
             ScanSettings settings = new ScanSettings.Builder()
                     .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -284,7 +320,26 @@ public class BluetoothLeService extends android.app.Service {
             scanner.startScan(null, settings, scanCallback);
             handler.postDelayed(() -> {
                 scanner.stopScan(scanCallback);
-                if (!isConnected) {
+                if (isConnected) return;
+
+                // 物理就近：选 RSSI 最强（值最大，最接近 0）的候选设备
+                ScanResult best = null;
+                synchronized (scanCandidates) {
+                    for (ScanResult r : scanCandidates) {
+                        if (best == null || r.getRssi() > best.getRssi()) {
+                            best = r;
+                        }
+                    }
+                }
+
+                if (best != null) {
+                    deviceAddress = best.getDevice().getAddress();
+                    Log.d(TAG, "Best candidate: " + deviceAddress + " rssi=" + best.getRssi());
+                    // 首次扫描连接：先记录上次地址（用于自动重连），绑定成功后才写 bound_device
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                            .edit().putString("ble_address", deviceAddress).apply();
+                    connect(deviceAddress);
+                } else {
                     broadcastUpdate("SCAN_TIMEOUT");
                 }
             }, 10000);
@@ -345,6 +400,22 @@ public class BluetoothLeService extends android.app.Service {
         return isConnected && bluetoothGatt != null;
     }
 
+    // ---------- 绑定状态查询 ----------
+
+    /** 当前 app 是否已绑定某台设备 */
+    public boolean isBound() {
+        return !getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString(KEY_BOUND_DEVICE, "").isEmpty();
+    }
+
+    /** 获取已绑定设备 MAC（未绑定时返回空串） */
+    public String getBoundDevice() {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString(KEY_BOUND_DEVICE, "");
+    }
+
+    // ---------- 数据收发 ----------
+
     public void sendCommand(byte cmd) {
         if (!isConnected || bluetoothGatt == null) return;
         BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
@@ -363,6 +434,95 @@ public class BluetoothLeService extends android.app.Service {
         if (char1 == null) return;
         char1.setValue(new byte[]{(byte) 0x04, (byte) tOn, (byte) tOff, (byte) hys});
         bluetoothGatt.writeCharacteristic(char1);
+    }
+
+    // ---------- 绑定握手 ----------
+
+    /**
+     * Char4 notify 订阅完成后发起身份握手：
+     * 若已绑定当前设备 → 发认证；否则 → 发绑定请求。
+     */
+    private void startHandshake() {
+        if (!isConnected || bluetoothGatt == null) return;
+        String bound = getBoundDevice();
+        if (!bound.isEmpty() && bound.equals(deviceAddress)) {
+            Log.d(TAG, "Handshake: AUTH (already bound)");
+            sendHandshake(CMD_AUTH);
+        } else {
+            Log.d(TAG, "Handshake: BIND (first time)");
+            sendHandshake(CMD_BIND);
+        }
+    }
+
+    /** 发送带 appId 的握手命令（BIND / AUTH）。载荷：[cmd] + appId[16] */
+    private void sendHandshake(byte cmd) {
+        if (!isConnected || bluetoothGatt == null) return;
+        BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
+        if (service == null) return;
+        BluetoothGattCharacteristic char1 = service.getCharacteristic(CHAR1_UUID);
+        if (char1 == null) return;
+        byte[] appId = AppIdentity.getAppId(this);
+        byte[] payload = new byte[1 + appId.length];
+        payload[0] = cmd;
+        System.arraycopy(appId, 0, payload, 1, appId.length);
+        char1.setValue(payload);
+        bluetoothGatt.writeCharacteristic(char1);
+    }
+
+    /** 请求解绑当前设备：发送解绑命令并清除本地绑定记录，随后断开连接。 */
+    public void unbind() {
+        if (isConnected && bluetoothGatt != null) {
+            BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
+            if (service != null) {
+                BluetoothGattCharacteristic char1 = service.getCharacteristic(CHAR1_UUID);
+                if (char1 != null) {
+                    char1.setValue(new byte[]{CMD_UNBIND});
+                    bluetoothGatt.writeCharacteristic(char1);
+                }
+            }
+        }
+        // 清除本地绑定记录（无论命令是否送达，本机都视为已解绑）
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit().remove(KEY_BOUND_DEVICE).remove("ble_address").apply();
+        userInitiatedDisconnect = true;
+        stopAutoReconnect();
+        disconnect();
+    }
+
+    /** 处理设备回传的绑定握手结果通知 */
+    private void handleBindingNotify(int value) {
+        switch (value) {
+            case NOTIFY_BIND_OK:
+                // 绑定成功：记录已绑定设备，设备端此时已置为认证态
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                        .edit().putString(KEY_BOUND_DEVICE, deviceAddress).apply();
+                Log.d(TAG, "Bind OK: " + deviceAddress);
+                if (callback != null) callback.onAuthenticated();
+                break;
+            case NOTIFY_AUTH_OK:
+                Log.d(TAG, "Auth OK");
+                if (callback != null) callback.onAuthenticated();
+                break;
+            case NOTIFY_BIND_FAIL:
+                // 设备已被其他 app 绑定：停止自动重连，清除该设备地址，避免死循环
+                stopAutoReconnect();
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                        .edit().remove("ble_address").apply();
+                Log.w(TAG, "Bind failed: device already bound by another app");
+                if (callback != null) callback.onBindFailed();
+                break;
+            case NOTIFY_AUTH_FAIL:
+                // 绑定已失效（设备端被解绑或换绑）：停止重连并清除失效的绑定/地址记录
+                stopAutoReconnect();
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                        .edit().remove(KEY_BOUND_DEVICE).remove("ble_address").apply();
+                Log.w(TAG, "Auth failed: not the bound app (binding invalid)");
+                if (callback != null) callback.onAuthFailed();
+                break;
+            default:
+                Log.d(TAG, "Unknown notify: " + Integer.toHexString(value));
+                break;
+        }
     }
 
     // ---------- 广播 ----------
@@ -384,7 +544,11 @@ public class BluetoothLeService extends android.app.Service {
         void onConnected();
         void onDisconnected();
         void onRelayStateReceived(int state);
-        /** Char4 notify 订阅完成，此时可安全发起依赖 notify 回传的查询 */
-        void onSubscribed();
+        /** 认证或绑定成功，已可发送控制命令（此时可查询继电器状态、同步参数）*/
+        void onAuthenticated();
+        /** 绑定失败：设备已被其他手机绑定（随后会被设备端断开）*/
+        default void onBindFailed() {}
+        /** 认证失败：本机非该设备的绑定方，绑定关系已失效（随后会被设备端断开）*/
+        default void onAuthFailed() {}
     }
 }

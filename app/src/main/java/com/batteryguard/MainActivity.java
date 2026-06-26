@@ -75,13 +75,32 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onSubscribed() {
-            // Char4 订阅完成后才查询继电器状态 + 同步参数（此时设备回的 notify 才能被收到）
+        public void onAuthenticated() {
+            // 身份认证/绑定通过后，查询继电器状态 + 同步参数（此时 notify 已通）
             runOnUiThread(() -> {
                 if (bleService == null || !bleService.isConnected()) return;
-                bleService.sendCommand((byte) 0x03);  // 先查继电器状态（核心）
+                tvStatus.setText("状态: 已连接（已认证）");
+                bleService.sendCommand((byte) 0x03);  // 查继电器状态
                 SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
                 bleService.sendParams(prefs.getInt("t_on", 30), prefs.getInt("t_off", 90), prefs.getInt("hys", 5));
+            });
+        }
+
+        @Override
+        public void onBindFailed() {
+            runOnUiThread(() -> {
+                tvStatus.setText("状态: 设备已被其他手机绑定");
+                Toast.makeText(MainActivity.this,
+                        "该设备已被其他手机绑定，请在设备上长按 3 秒解绑后重试", Toast.LENGTH_LONG).show();
+            });
+        }
+
+        @Override
+        public void onAuthFailed() {
+            runOnUiThread(() -> {
+                tvStatus.setText("状态: 绑定已失效，请重新绑定");
+                Toast.makeText(MainActivity.this,
+                        "设备绑定已失效（可能已被解绑或绑给其他手机），请重新扫描绑定", Toast.LENGTH_LONG).show();
             });
         }
     };
@@ -108,6 +127,15 @@ public class MainActivity extends AppCompatActivity {
                 if (bleService != null && bleService.isConnected()) {
                     byte cmd = intent.getByteExtra("cmd", (byte) 0);
                     bleService.sendCommand(cmd);
+                }
+            } else if ("ACTION_UNBIND".equals(action)) {
+                if (bleService != null && bleService.isConnected()) {
+                    bleService.unbind();
+                    Toast.makeText(context, "已解绑设备", Toast.LENGTH_SHORT).show();
+                    updateConnectionState();
+                } else {
+                    // 未连接时不在本地清除绑定记录，避免与设备端状态不一致
+                    Toast.makeText(context, "请先连接设备后再解绑，或在设备上长按 3 秒解绑", Toast.LENGTH_LONG).show();
                 }
             } else if ("SCANNING".equals(action)) {
                 runOnUiThread(() -> {
@@ -259,6 +287,7 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction("BATTERY_LEVEL");
         filter.addAction("ACTION_SEND_PARAMS");
         filter.addAction("ACTION_SEND_COMMAND");
+        filter.addAction("ACTION_UNBIND");
         filter.addAction("SCANNING");
         filter.addAction("CONNECTING");
         filter.addAction("SCAN_TIMEOUT");
@@ -430,7 +459,7 @@ public class MainActivity extends AppCompatActivity {
             btnConnect.setEnabled(true);
             btnToggle.setEnabled(true);
             tvStatus.setText("状态: 已连接");
-            // 继电器区恢复正常显示，等待设备上报（订阅完成后由 onSubscribed 查询）
+            // 继电器区恢复正常显示，等待设备上报（认证通过后由 onAuthenticated 查询）
             tvRelay.setTextColor(0xFF333333);
             tvRelay.setText("设备继电器: …");
             loadParamsAndUpdateHint();

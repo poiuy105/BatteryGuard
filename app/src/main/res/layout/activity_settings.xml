@@ -72,6 +72,13 @@
         android:text="@string/save" />
 
     <Button
+        android:id="@+id/btn_unbind"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="解绑设备" />
+
+    <Button
         android:id="@+id/btn_back"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
