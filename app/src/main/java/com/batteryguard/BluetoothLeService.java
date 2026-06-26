@@ -321,9 +321,9 @@ public class BluetoothLeService extends android.app.Service {
         stopAutoReconnect();             // 停止自动重连
         if (bluetoothGatt != null) {
             bluetoothGatt.disconnect();
-            // 立即 close 释放底层资源，避免下次 connect 时 GATT 对象冲突
-            bluetoothGatt.close();
-            bluetoothGatt = null;
+            // 注意：不要在这里 close()！disconnect() 是异步的，
+            // 必须等 onConnectionStateChange(STATE_DISCONNECTED) 回调后再 close()，
+            // 否则 BLE 控制器来不及发送 LL_TERMINATE_IND，对端收不到断开事件。
         }
         isConnected = false;
     }
