@@ -82,9 +82,7 @@ public class BluetoothLeService extends android.app.Service {
             if (name == null) {
                 name = device.getName();
             }
-            String logEntry = device.getAddress() + " " + (name != null ? name : "[null]");
-            Log.d(TAG, "Scanned: " + logEntry);
-            broadcastScanLog(logEntry);
+            Log.d(TAG, "Scanned: " + device.getAddress() + " " + (name != null ? name : "[null]"));
             if (name != null && name.contains(DEVICE_NAME)) {
                 scanner.stopScan(this);
                 deviceAddress = device.getAddress();
@@ -176,6 +174,18 @@ public class BluetoothLeService extends android.app.Service {
         @Override
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
             Log.d(TAG, "Characteristic write: " + status);
+        }
+
+        @Override
+        public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+            // Char4 的 CCCD（notify 订阅）写入成功后，才通知 UI 层发起状态查询
+            // —— 确保设备回的 notify 能被收到，修复“连接后继电器状态不同步”
+            if (status == BluetoothGatt.GATT_SUCCESS
+                    && CCCD_UUID.equals(descriptor.getUuid())
+                    && descriptor.getCharacteristic() != null
+                    && CHAR4_UUID.equals(descriptor.getCharacteristic().getUuid())) {
+                if (callback != null) callback.onSubscribed();
+            }
         }
     };
 
@@ -370,16 +380,11 @@ public class BluetoothLeService extends android.app.Service {
         sendBroadcast(intent);
     }
 
-    private void broadcastScanLog(String logEntry) {
-        Intent intent = new Intent("SCAN_LOG");
-        intent.putExtra("log", logEntry);
-        intent.setPackage(getPackageName());
-        sendBroadcast(intent);
-    }
-
     public interface BleCallback {
         void onConnected();
         void onDisconnected();
         void onRelayStateReceived(int state);
+        /** Char4 notify 订阅完成，此时可安全发起依赖 notify 回传的查询 */
+        void onSubscribed();
     }
 }

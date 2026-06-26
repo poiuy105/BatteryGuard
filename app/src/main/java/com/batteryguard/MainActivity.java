@@ -31,10 +31,9 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_NOTIFICATION_PERMISSION = 2;
     private static final String PREFS_NAME = "BatteryGuardPrefs";
 
-    private TextView tvBattery, tvRelay, tvLocalCharging, tvStatus, tvHint, tvScanLog;
+    private TextView tvBattery, tvRelay, tvLocalCharging, tvStatus, tvHint;
     private Button btnConnect, btnToggle, btnSettings;
     private SwitchCompat swKeepAlive, swBootStartup;
-    private final StringBuilder scanLogBuilder = new StringBuilder();
 
     private BluetoothLeService bleService;
     private boolean isBound = false;
@@ -74,6 +73,17 @@ public class MainActivity extends AppCompatActivity {
         public void onRelayStateReceived(int state) {
             runOnUiThread(() -> updateRelayUI(state));
         }
+
+        @Override
+        public void onSubscribed() {
+            // Char4 订阅完成后才查询继电器状态 + 同步参数（此时设备回的 notify 才能被收到）
+            runOnUiThread(() -> {
+                if (bleService == null || !bleService.isConnected()) return;
+                bleService.sendCommand((byte) 0x03);  // 先查继电器状态（核心）
+                SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                bleService.sendParams(prefs.getInt("t_on", 30), prefs.getInt("t_off", 90), prefs.getInt("hys", 5));
+            });
+        }
     };
 
     // 接收来自服务和 BLE 的广播
@@ -103,8 +113,6 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     tvStatus.setText("状态: 正在扫描设备...");
                     btnConnect.setEnabled(false);
-                    scanLogBuilder.setLength(0);
-                    tvScanLog.setText("");
                 });
             } else if ("CONNECTING".equals(action)) {
                 runOnUiThread(() -> {
@@ -146,14 +154,6 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(context, "请开启手机定位服务（GPS），部分手机蓝牙扫描需要", Toast.LENGTH_LONG).show();
                 Intent locationIntent = new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS);
                 startActivity(locationIntent);
-            } else if ("SCAN_LOG".equals(action)) {
-                String log = intent.getStringExtra("log");
-                if (log != null) {
-                    runOnUiThread(() -> {
-                        scanLogBuilder.append(log).append("\n");
-                        tvScanLog.setText(scanLogBuilder.toString());
-                    });
-                }
             }
         }
     };
@@ -187,7 +187,6 @@ public class MainActivity extends AppCompatActivity {
         tvLocalCharging = findViewById(R.id.tv_local_charging);
         tvStatus = findViewById(R.id.tv_status);
         tvHint = findViewById(R.id.tv_hint);
-        tvScanLog = findViewById(R.id.tv_scan_log);
         btnConnect = findViewById(R.id.btn_connect);
         btnToggle = findViewById(R.id.btn_toggle);
         btnSettings = findViewById(R.id.btn_settings);
@@ -273,7 +272,6 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction("ADDR_INVALID");
         filter.addAction("DEVICE_NULL");
         filter.addAction("LOCATION_DISABLED");
-        filter.addAction("SCAN_LOG");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(appReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -432,15 +430,9 @@ public class MainActivity extends AppCompatActivity {
             btnConnect.setEnabled(true);
             btnToggle.setEnabled(true);
             tvStatus.setText("状态: 已连接");
-            // 继电器区恢复正常显示，等待设备上报（查询命令 0x03 会触发 notify）
+            // 继电器区恢复正常显示，等待设备上报（订阅完成后由 onSubscribed 查询）
             tvRelay.setTextColor(0xFF333333);
             tvRelay.setText("设备继电器: …");
-            bleService.sendCommand((byte) 0x03);
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            int tOn = prefs.getInt("t_on", 30);
-            int tOff = prefs.getInt("t_off", 90);
-            int hys = prefs.getInt("hys", 5);
-            bleService.sendParams(tOn, tOff, hys);
             loadParamsAndUpdateHint();
         } else {
             btnConnect.setText(R.string.connect);
