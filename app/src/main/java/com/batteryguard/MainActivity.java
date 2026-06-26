@@ -46,6 +46,14 @@ public class MainActivity extends AppCompatActivity {
             bleService.setCallback(bleCallback);
             isBound = true;
             updateConnectionState();
+            // 冷启动自动重连：若存在历史设备地址且当前未连接，发起自动重连
+            if (!bleService.isConnected()) {
+                SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                String addr = prefs.getString("ble_address", "");
+                if (!addr.isEmpty()) {
+                    bleService.startAutoReconnect();
+                }
+            }
         }
 
         @Override

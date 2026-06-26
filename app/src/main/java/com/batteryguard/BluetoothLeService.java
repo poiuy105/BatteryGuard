@@ -104,6 +104,9 @@ public class BluetoothLeService extends android.app.Service {
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+            // [调试-阶段2] 打印状态码定位重连失败病因（验证后可移除）
+            // status: 133=GATT_ERROR(资源/时序), 19=REMOTE_USER_TERMINATED, 8/62=超时, 22=本地断开
+            Log.e(TAG, "onConnectionStateChange: status=" + status + " newState=" + newState);
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 isConnected = false;
                 broadcastUpdate("CONNECT_FAILED");
@@ -219,7 +222,7 @@ public class BluetoothLeService extends android.app.Service {
 
     // ---------- 自动重连 ----------
 
-    private void startAutoReconnect() {
+    public void startAutoReconnect() {
         if (autoReconnectActive) return; // 已经在重连中
         autoReconnectActive = true;
         Log.d(TAG, "Starting auto reconnect");
