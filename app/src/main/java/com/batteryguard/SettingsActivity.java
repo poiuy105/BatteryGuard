@@ -8,6 +8,7 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 public class SettingsActivity extends AppCompatActivity {
@@ -16,7 +17,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private SeekBar sbTOn, sbTOff, sbHys;
     private TextView tvTOnValue, tvTOffValue, tvHysValue;
-    private Button btnSave, btnUnbind, btnBack;
+    private Button btnSave, btnUnbind, btnForceUnbind, btnBack;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,6 +32,7 @@ public class SettingsActivity extends AppCompatActivity {
         tvHysValue = findViewById(R.id.tv_hys_value);
         btnSave = findViewById(R.id.btn_save);
         btnUnbind = findViewById(R.id.btn_unbind);
+        btnForceUnbind = findViewById(R.id.btn_force_unbind);
         btnBack = findViewById(R.id.btn_back);
 
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
@@ -128,6 +130,21 @@ public class SettingsActivity extends AppCompatActivity {
             sendBroadcast(new Intent("ACTION_UNBIND").setPackage(getPackageName()));
             Toast.makeText(this, "已请求解绑", Toast.LENGTH_SHORT).show();
             finish();
+        });
+
+        btnForceUnbind.setOnClickListener(v -> {
+            // 强制解绑：仅在本地清除绑定记录 + 重置 appId，不与设备通信（设备丢失场景）
+            new AlertDialog.Builder(this)
+                    .setTitle("强制解绑 app")
+                    .setMessage("将清除本机绑定记录并重置 app 身份，用于 CH572 设备丢失场景。"
+                            + "执行后旧设备绑定彻底作废，app 可绑定新设备。此操作不可撤销，是否继续？")
+                    .setPositiveButton("确定强制解绑", (d, w) -> {
+                        sendBroadcast(new Intent("ACTION_FORCE_UNBIND").setPackage(getPackageName()));
+                        Toast.makeText(this, "已强制解绑 app", Toast.LENGTH_LONG).show();
+                        finish();
+                    })
+                    .setNegativeButton("取消", null)
+                    .show();
         });
 
         btnBack.setOnClickListener(v -> finish());

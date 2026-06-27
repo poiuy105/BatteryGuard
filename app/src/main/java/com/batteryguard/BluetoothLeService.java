@@ -489,6 +489,19 @@ public class BluetoothLeService extends android.app.Service {
         disconnect();
     }
 
+    /**
+     * 强制解绑 app：仅在本地清除绑定记录（不向设备发任何命令），用于 CH572 设备丢失场景。
+     * 清除 bound_device + ble_address，并重置 appId（旧设备绑定彻底作废）。
+     */
+    public void forceUnbind() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit().remove(KEY_BOUND_DEVICE).remove("ble_address").apply();
+        AppIdentity.resetAppId(this);
+        userInitiatedDisconnect = true;
+        stopAutoReconnect();
+        disconnect();
+    }
+
     /** 处理设备回传的绑定握手结果通知 */
     private void handleBindingNotify(int value) {
         switch (value) {

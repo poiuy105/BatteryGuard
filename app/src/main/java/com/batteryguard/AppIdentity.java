@@ -39,6 +39,14 @@ public class AppIdentity {
         }
     }
 
+    /** 重置 appId：清除持久化值和缓存，下次 getAppId 会生成新的。用于"强制解绑 app"。 */
+    public static void resetAppId(Context context) {
+        cachedAppId = null;
+        context.getApplicationContext()
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().remove(KEY_APP_ID).apply();
+    }
+
     /** UUID 字符串 → 16 字节（高 64 位 + 低 64 位，大端序拼接） */
     private static byte[] uuidToBytes(String idStr) {
         UUID uuid = UUID.fromString(idStr);

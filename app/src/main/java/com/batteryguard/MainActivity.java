@@ -137,6 +137,12 @@ public class MainActivity extends AppCompatActivity {
                     // 未连接时不在本地清除绑定记录，避免与设备端状态不一致
                     Toast.makeText(context, "请先连接设备后再解绑，或在设备上长按 3 秒解绑", Toast.LENGTH_LONG).show();
                 }
+            } else if ("ACTION_FORCE_UNBIND".equals(action)) {
+                if (bleService != null) {
+                    bleService.forceUnbind();
+                    Toast.makeText(context, "已强制解绑 app，可绑定新设备", Toast.LENGTH_LONG).show();
+                    updateConnectionState();
+                }
             } else if ("SCANNING".equals(action)) {
                 runOnUiThread(() -> {
                     tvStatus.setText("状态: 正在扫描设备...");
@@ -288,6 +294,7 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction("ACTION_SEND_PARAMS");
         filter.addAction("ACTION_SEND_COMMAND");
         filter.addAction("ACTION_UNBIND");
+        filter.addAction("ACTION_FORCE_UNBIND");
         filter.addAction("SCANNING");
         filter.addAction("CONNECTING");
         filter.addAction("SCAN_TIMEOUT");

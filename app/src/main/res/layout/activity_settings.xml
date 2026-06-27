@@ -79,6 +79,13 @@
         android:text="解绑设备" />
 
     <Button
+        android:id="@+id/btn_force_unbind"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="强制解绑 app（设备丢失）" />
+
+    <Button
         android:id="@+id/btn_back"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
