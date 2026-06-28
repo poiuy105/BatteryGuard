@@ -436,6 +436,48 @@ public class BluetoothLeService extends android.app.Service {
         bluetoothGatt.writeCharacteristic(char1);
     }
 
+    // ---------- LED 控制命令 ----------
+
+    public boolean setLedColor(int color) {
+        if (!isConnected || bluetoothGatt == null) return false;
+        BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
+        if (service == null) return false;
+        BluetoothGattCharacteristic char1 = service.getCharacteristic(CHAR1_UUID);
+        if (char1 == null) return false;
+        char1.setValue(new byte[]{(byte) 0x20, (byte) (color & 0x07)});
+        return bluetoothGatt.writeCharacteristic(char1);
+    }
+
+    public boolean setLedBrightness(int brightness) {
+        if (!isConnected || bluetoothGatt == null) return false;
+        BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
+        if (service == null) return false;
+        BluetoothGattCharacteristic char1 = service.getCharacteristic(CHAR1_UUID);
+        if (char1 == null) return false;
+        char1.setValue(new byte[]{(byte) 0x21, (byte) (brightness & 0x3F)});
+        return bluetoothGatt.writeCharacteristic(char1);
+    }
+
+    public boolean setLedBreathe(int color, int speed) {
+        if (!isConnected || bluetoothGatt == null) return false;
+        BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
+        if (service == null) return false;
+        BluetoothGattCharacteristic char1 = service.getCharacteristic(CHAR1_UUID);
+        if (char1 == null) return false;
+        char1.setValue(new byte[]{(byte) 0x22, (byte) (color & 0x07), (byte) (speed & 0x03)});
+        return bluetoothGatt.writeCharacteristic(char1);
+    }
+
+    public boolean setLedOff() {
+        if (!isConnected || bluetoothGatt == null) return false;
+        BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
+        if (service == null) return false;
+        BluetoothGattCharacteristic char1 = service.getCharacteristic(CHAR1_UUID);
+        if (char1 == null) return false;
+        char1.setValue(new byte[]{(byte) 0x23});
+        return bluetoothGatt.writeCharacteristic(char1);
+    }
+
     // ---------- 绑定握手 ----------
 
     /**
