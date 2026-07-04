@@ -436,6 +436,17 @@ public class BluetoothLeService extends android.app.Service {
         bluetoothGatt.writeCharacteristic(char1);
     }
 
+    /** 下发 LED 继电器开/关色配置（0x25）。颜色 0-7：关/红/绿/蓝/黄/青/白/紫。 */
+    public void sendLedColors(int onColor, int offColor) {
+        if (!isConnected || bluetoothGatt == null) return;
+        BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
+        if (service == null) return;
+        BluetoothGattCharacteristic char1 = service.getCharacteristic(CHAR1_UUID);
+        if (char1 == null) return;
+        char1.setValue(new byte[]{(byte) 0x25, (byte) onColor, (byte) offColor});
+        bluetoothGatt.writeCharacteristic(char1);
+    }
+
     // ---------- LED 控制命令 ----------
 
     public boolean setLedColor(int color) {
@@ -448,17 +459,7 @@ public class BluetoothLeService extends android.app.Service {
         return bluetoothGatt.writeCharacteristic(char1);
     }
 
-    public boolean setLedBrightness(int brightness) {
-        if (!isConnected || bluetoothGatt == null) return false;
-        BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
-        if (service == null) return false;
-        BluetoothGattCharacteristic char1 = service.getCharacteristic(CHAR1_UUID);
-        if (char1 == null) return false;
-        char1.setValue(new byte[]{(byte) 0x21, (byte) (brightness & 0x3F)});
-        return bluetoothGatt.writeCharacteristic(char1);
-    }
-
-    public boolean setLedBreathe(int color, int speed) {
+    public boolean setLedBlink(int color, int speed) {
         if (!isConnected || bluetoothGatt == null) return false;
         BluetoothGattService service = bluetoothGatt.getService(SERVICE_UUID);
         if (service == null) return false;

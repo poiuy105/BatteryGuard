@@ -3,8 +3,10 @@ package com.batteryguard;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.SeekBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -17,6 +19,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private SeekBar sbTOn, sbTOff, sbHys;
     private TextView tvTOnValue, tvTOffValue, tvHysValue;
+    private Spinner spLedOn, spLedOff;
     private Button btnSave, btnUnbind, btnForceUnbind, btnBack;
 
     @Override
@@ -30,6 +33,8 @@ public class SettingsActivity extends AppCompatActivity {
         tvTOnValue = findViewById(R.id.tv_t_on_value);
         tvTOffValue = findViewById(R.id.tv_t_off_value);
         tvHysValue = findViewById(R.id.tv_hys_value);
+        spLedOn = findViewById(R.id.sp_led_on);
+        spLedOff = findViewById(R.id.sp_led_off);
         btnSave = findViewById(R.id.btn_save);
         btnUnbind = findViewById(R.id.btn_unbind);
         btnForceUnbind = findViewById(R.id.btn_force_unbind);
@@ -45,6 +50,16 @@ public class SettingsActivity extends AppCompatActivity {
         sbHys.setProgress(hys - 1);
 
         updateLabels(tOn, tOff, hys);
+
+        // LED 继电器开/关色选择（8 色：关/红/绿/蓝/黄/青/白/紫，position 即颜色值）
+        String[] ledColors = {"关", "红", "绿", "蓝", "黄", "青", "白", "紫"};
+        ArrayAdapter<String> ledAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, ledColors);
+        ledAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spLedOn.setAdapter(ledAdapter);
+        spLedOff.setAdapter(ledAdapter);
+        spLedOn.setSelection(prefs.getInt("led_color_on", 1));   // 默认红
+        spLedOff.setSelection(prefs.getInt("led_color_off", 2)); // 默认绿
 
         sbTOn.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -108,10 +123,15 @@ public class SettingsActivity extends AppCompatActivity {
             int tOffVal = sbTOff.getProgress() + 10;
             int hysVal = sbHys.getProgress() + 1;
 
+            int ledOnVal = spLedOn.getSelectedItemPosition();
+            int ledOffVal = spLedOff.getSelectedItemPosition();
+
             SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit();
             editor.putInt("t_on", tOnVal);
             editor.putInt("t_off", tOffVal);
             editor.putInt("hys", hysVal);
+            editor.putInt("led_color_on", ledOnVal);
+            editor.putInt("led_color_off", ledOffVal);
             editor.apply();
 
             Intent intent = new Intent("ACTION_SEND_PARAMS");
@@ -120,6 +140,13 @@ public class SettingsActivity extends AppCompatActivity {
             intent.putExtra("hys", hysVal);
             intent.setPackage(getPackageName());
             sendBroadcast(intent);
+
+            // 下发 LED 配色（已连接则立即生效，否则下次连接 onAuthenticated 下发）
+            Intent ledIntent = new Intent("ACTION_SET_LED_COLORS");
+            ledIntent.putExtra("led_color_on", ledOnVal);
+            ledIntent.putExtra("led_color_off", ledOffVal);
+            ledIntent.setPackage(getPackageName());
+            sendBroadcast(ledIntent);
 
             Toast.makeText(this, "参数已保存", Toast.LENGTH_SHORT).show();
             finish();

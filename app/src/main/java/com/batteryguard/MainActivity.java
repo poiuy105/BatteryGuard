@@ -83,6 +83,8 @@ public class MainActivity extends AppCompatActivity {
                 bleService.sendCommand((byte) 0x03);  // 查继电器状态
                 SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
                 bleService.sendParams(prefs.getInt("t_on", 30), prefs.getInt("t_off", 90), prefs.getInt("hys", 5));
+                // 下发 LED 继电器开/关色配置（app 自定义）
+                bleService.sendLedColors(prefs.getInt("led_color_on", 1), prefs.getInt("led_color_off", 2));
             });
         }
 
@@ -122,6 +124,13 @@ public class MainActivity extends AppCompatActivity {
                     int hys = intent.getIntExtra("hys", 5);
                     bleService.sendParams(tOn, tOff, hys);
                     loadParamsAndUpdateHint();
+                }
+            } else if ("ACTION_SET_LED_COLORS".equals(action)) {
+                if (bleService != null && bleService.isConnected()) {
+                    bleService.sendLedColors(
+                            intent.getIntExtra("led_color_on", 1),
+                            intent.getIntExtra("led_color_off", 2));
+                    Toast.makeText(context, "LED 配色已下发", Toast.LENGTH_SHORT).show();
                 }
             } else if ("ACTION_SEND_COMMAND".equals(action)) {
                 if (bleService != null && bleService.isConnected()) {
@@ -294,6 +303,7 @@ public class MainActivity extends AppCompatActivity {
         IntentFilter filter = new IntentFilter();
         filter.addAction("BATTERY_LEVEL");
         filter.addAction("ACTION_SEND_PARAMS");
+        filter.addAction("ACTION_SET_LED_COLORS");
         filter.addAction("ACTION_SEND_COMMAND");
         filter.addAction("ACTION_UNBIND");
         filter.addAction("ACTION_FORCE_UNBIND");
