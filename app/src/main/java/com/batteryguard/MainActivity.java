@@ -32,7 +32,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String PREFS_NAME = "BatteryGuardPrefs";
 
     private TextView tvBattery, tvRelay, tvLocalCharging, tvStatus, tvHint;
-    private Button btnConnect, btnToggle, btnSettings;
+    private Button btnConnect, btnRelayOn, btnRelayOff, btnSettings;
     private SwitchCompat swKeepAlive, swBootStartup;
 
     private BluetoothLeService bleService;
@@ -222,7 +222,8 @@ public class MainActivity extends AppCompatActivity {
         tvStatus = findViewById(R.id.tv_status);
         tvHint = findViewById(R.id.tv_hint);
         btnConnect = findViewById(R.id.btn_connect);
-        btnToggle = findViewById(R.id.btn_toggle);
+        btnRelayOn = findViewById(R.id.btn_relay_on);
+        btnRelayOff = findViewById(R.id.btn_relay_off);
         btnSettings = findViewById(R.id.btn_settings);
         swKeepAlive = findViewById(R.id.sw_keep_alive);
         swBootStartup = findViewById(R.id.sw_boot_startup);
@@ -270,14 +271,15 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        btnToggle.setOnClickListener(v -> {
+        btnRelayOn.setOnClickListener(v -> {
             if (bleService != null && bleService.isConnected()) {
-                String relayText = tvRelay.getText().toString();
-                if (relayText.contains("开")) {
-                    bleService.sendCommand((byte) 0x02);
-                } else {
-                    bleService.sendCommand((byte) 0x01);
-                }
+                bleService.sendCommand((byte) 0x01);
+            }
+        });
+
+        btnRelayOff.setOnClickListener(v -> {
+            if (bleService != null && bleService.isConnected()) {
+                bleService.sendCommand((byte) 0x02);
             }
         });
 
@@ -464,7 +466,8 @@ public class MainActivity extends AppCompatActivity {
         if (connected) {
             btnConnect.setText(R.string.disconnect);
             btnConnect.setEnabled(true);
-            btnToggle.setEnabled(true);
+            btnRelayOn.setEnabled(true);
+            btnRelayOff.setEnabled(true);
             tvStatus.setText("状态: 已连接");
             // 继电器区恢复正常显示，等待设备上报（认证通过后由 onAuthenticated 查询）
             tvRelay.setTextColor(0xFF333333);
@@ -473,7 +476,8 @@ public class MainActivity extends AppCompatActivity {
         } else {
             btnConnect.setText(R.string.connect);
             btnConnect.setEnabled(true);
-            btnToggle.setEnabled(false);
+            btnRelayOn.setEnabled(false);
+            btnRelayOff.setEnabled(false);
             tvStatus.setText("状态: 未连接");
             // 断连：设备继电器数据不再可靠，标"离线"并灰显
             tvRelay.setText("设备继电器: 离线");
@@ -486,6 +490,9 @@ public class MainActivity extends AppCompatActivity {
         // （本机是否真在充电由系统广播独立显示，避免设备未接入回路时的误导）
         tvRelay.setTextColor(0xFF333333);
         tvRelay.setText(state == 1 ? "设备继电器: 开" : "设备继电器: 关");
+        // 根据继电器状态禁用/启用对应按钮
+        btnRelayOn.setEnabled(state != 1);
+        btnRelayOff.setEnabled(state != 0);
     }
 
     private void loadParamsAndUpdateHint() {

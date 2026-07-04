@@ -2,7 +2,8 @@
     <string name="app_name">智能充电保护器</string>
     <string name="connect">连接设备</string>
     <string name="disconnect">断开连接</string>
-    <string name="manual_toggle">手动开关</string>
+    <string name="relay_on">开</string>
+    <string name="relay_off">关</string>
     <string name="settings">参数设置</string>
     <string name="battery_label">电量: --%</string>
     <string name="relay_label">设备继电器: --</string>
