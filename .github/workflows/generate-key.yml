@@ -1,0 +1,44 @@
+# 一次性使用：在 GitHub runner 上生成 release 签名 keystore。
+# 密码/alias 从 repository secret 读取（不写死、不打印、不进日志）。
+# 生成的 keystore 作为 artifact 供下载，下载后 base64 存入 SIGNING_KEYSTORE_BASE64。
+# 注意：本仓库为 PUBLIC，keystore 文件本身已加密(PKCS12)，无密码无法用于签名。
+name: Generate Signing Key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup JDK 17 (provides keytool)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Generate keystore
+        env:
+          STORE_PASS: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -v \
+            -storetype PKCS12 \
+            -keystore release.keystore \
+            -alias "$KEY_ALIAS" \
+            -storepass "$STORE_PASS" \
+            -keypass "$KEY_PASS" \
+            -keyalg RSA -keysize 2048 -validity 9125 \
+            -dname "CN=BatteryGuard, OU=Mobile, O=BatteryGuard, L=Shenzhen, ST=Guangdong, C=CN"
+          # 仅校验条目类型，不输出指纹/密码
+          keytool -list -keystore release.keystore -storepass "$STORE_PASS" -alias "$KEY_ALIAS" \
+            | grep -Ei "Entry type|Keystore type" || true
+
+      - name: Upload keystore artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signing-keystore
+          path: release.keystore
+          retention-days: 1
