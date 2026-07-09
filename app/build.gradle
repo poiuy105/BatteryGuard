@@ -12,13 +12,18 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
+
+        // 仅保留中/英资源，剔除 androidx 库自带的其他语言翻译（resources.arsc 瘦身）
+        resConfigs 'zh', 'en'
     }
 
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                    'proguard-rules.pro',
+                    'proguard-strip-logs.pro'
         }
         debug {
             minifyEnabled true
@@ -34,5 +39,4 @@ android {
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
 }
