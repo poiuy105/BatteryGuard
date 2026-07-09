@@ -1,10 +1,9 @@
 name: Build Debug APK
 
+# 仅手动触发：避免与 build-release.yml 在每次 push 时重复构建、浪费 Actions 配额。
+# 需要 debug APK 时在 Actions 页面 Run workflow，或本地 ./gradlew assembleDebug。
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build:
