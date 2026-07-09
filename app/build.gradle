@@ -17,10 +17,26 @@ android {
         resConfigs 'zh', 'en'
     }
 
+    // release 签名配置：签名信息从环境变量读取（CI 注入）。
+    // 本地无这些环境变量时 hasSigning=false，release 不签名（产出 unsigned APK），
+    // 因此本地直接 assembleRelease 不会因缺失 keystore 而报错。
+    def hasSigning = System.getenv("SIGNING_STORE_FILE") && System.getenv("SIGNING_STORE_PASSWORD") && System.getenv("SIGNING_KEY_ALIAS") && System.getenv("SIGNING_KEY_PASSWORD")
+    signingConfigs {
+        if (hasSigning) {
+            release {
+                storeFile file(System.getenv("SIGNING_STORE_FILE"))
+                storePassword System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
+            if (hasSigning) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
                     'proguard-rules.pro',
                     'proguard-strip-logs.pro'
